@@ -59,6 +59,10 @@ public class NytService {
         String startDateStr = sdf.format(startDate);
         String endDateStr = sdf.format(endDate);
 
+        return this.obtainNews(startDateStr, endDateStr);
+    }
+
+    public List<NytArticle> obtainNews(String startDateStr, String endDateStr) throws Exception {
         String apiKey = this.environment.getProperty("nyt.apiKey");
         Integer page = 0;
         Integer pages = null;
@@ -67,7 +71,7 @@ public class NytService {
 //        String sections = "fq=news_desk.contains:(\"Business\"%20\"Arts\"%20\"Automobiles\"%20\"Books\")";
         List<NytArticle> articles = new ArrayList<>();
 
-        this.logger.info("obtaining articles from: " + startDate + "...");
+        this.logger.info("obtaining articles from: " + startDateStr + "...");
 
         while((pages == null || page < pages)) {
             Timer timer = new Timer().start();
@@ -173,6 +177,11 @@ public class NytService {
 
         NytArticle i = new NytArticle();
         i.setTitle((String) doc.get("abstract"));
+
+        if (StringUtils.isEmpty(i.getTitle())) {
+            i.setTitle((String) doc.get("snippet"));
+        }
+
         i.setUrl((String) doc.get("web_url"));
         i.setLeadParagraph((String) doc.get("lead_paragraph"));
         i.setSource((String) doc.get("source"));
@@ -198,6 +207,7 @@ public class NytService {
         String text = this.getArticleText(i.getUrl());
 
         if (StringUtils.isNotEmpty(text)) {
+            text = text.replace(" Follow The New York Times Opinion section on Facebook, Twitter (@NYTopinion) and Instagram.", "");
             i.setText(text);
         }
 
