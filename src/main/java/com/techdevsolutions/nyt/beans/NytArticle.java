@@ -20,6 +20,7 @@ public class NytArticle {
     private String materialType;
     private String text;
     private Map<String, String> tags = new HashMap<>();
+    private GeoCode location;
 
     @Override
     public String toString() {
@@ -38,13 +39,14 @@ public class NytArticle {
                 ", materialType='" + materialType + '\'' +
                 ", text='" + text + '\'' +
                 ", tags=" + tags +
+                ", location=" + location +
                 '}';
     }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof NytArticle)) return false;
+        if (o == null || getClass() != o.getClass()) return false;
         NytArticle that = (NytArticle) o;
         return Objects.equals(title, that.title) &&
                 Objects.equals(headline, that.headline) &&
@@ -59,13 +61,22 @@ public class NytArticle {
                 Objects.equals(subSection, that.subSection) &&
                 Objects.equals(materialType, that.materialType) &&
                 Objects.equals(text, that.text) &&
-                Objects.equals(tags, that.tags);
+                Objects.equals(tags, that.tags) &&
+                Objects.equals(location, that.location);
     }
 
     @Override
     public int hashCode() {
 
-        return Objects.hash(title, headline, url, leadParagraph, source, date, dateStr, documentType, newsDesk, section, subSection, materialType, text, tags);
+        return Objects.hash(title, headline, url, leadParagraph, source, date, dateStr, documentType, newsDesk, section, subSection, materialType, text, tags, location);
+    }
+
+    public GeoCode getLocation() {
+        return location;
+    }
+
+    public void setLocation(GeoCode location) {
+        this.location = location;
     }
 
     public String getText() {

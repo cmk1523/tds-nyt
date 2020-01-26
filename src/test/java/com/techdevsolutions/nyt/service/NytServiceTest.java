@@ -5,8 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.techdevsolutions.common.dao.elasticsearch.BaseElasticsearchHighLevel;
 import com.techdevsolutions.common.service.core.DateUtils;
 import com.techdevsolutions.common.service.core.ElasticsearchUtils;
+import com.techdevsolutions.common.service.core.FileUtils;
+import com.techdevsolutions.common.service.core.HashUtils;
+import com.techdevsolutions.nyt.beans.GeoCode;
 import com.techdevsolutions.nyt.beans.NytArticle;
 import org.apache.commons.lang3.StringUtils;
+import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.common.xcontent.XContentType;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -15,14 +20,16 @@ import org.mockito.Spy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.mock.env.MockEnvironment;
+import org.springframework.web.util.UriUtils;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Date;
-import java.util.List;
-import java.util.TimeZone;
+import java.util.*;
 
 import static org.junit.Assert.*;
 
@@ -33,98 +40,119 @@ public class NytServiceTest {
     @Spy
     MockEnvironment environment = new MockEnvironment();
 
-    NytService nytService = new NytService(environment);
+    GeocodeService geocodeService = new GeocodeService();
+    NytService nytService = new NytService(this.environment, this.geocodeService);
+
+
+    @Test
+    public void autoDownload() throws Exception {
+        String nytApiKey = System.getenv("nyt.apiKey");
+
+        if (StringUtils.isEmpty(nytApiKey)) {
+            System.out.println("\n\nNYT apiKey is null or empty. Please run this test with an environment. i.g. nyt.apiKey=123456\n\n");
+            return;
+        }
+
+        String locationIqApiKey = System.getenv("locationiq.apiKey");
+
+        if (StringUtils.isEmpty(locationIqApiKey)) {
+            System.out.println("\n\nLocationIQ apiKey is null or empty. Please run this test with an environment. i.g. locationiq.apiKey=123456\n\n");
+            return;
+        }
+
+        String directory = "";
+
+        if (FileUtils.doesFileOrDirectoryExist("/Users/chris/Dropbox/")) {
+            System.out.println("On Mac OS...");
+            directory = "/Users/chris/Dropbox/Data/nyt";
+        } else {
+            System.out.println("On Windows...");
+            directory = "C:/Users/Chris/Dropbox/Data/nyt";
+        }
+
+        this.nytService.autoDownload(nytApiKey, locationIqApiKey, directory);
+    }
 
     @Ignore
     @Test
-    public void getYesterdaysNews() throws Exception {
-        String apiKey = System.getenv("nyt.apiKey");
+    public void ingestFromFile() throws Exception {
+        String apiKey = System.getenv("locationiq.apiKey");
 
         if (StringUtils.isEmpty(apiKey)) {
-            throw new Exception("NYT apiKey is null or empty. Please run this test with an environment. i.g. nyt.apiKey=123456");
+            System.out.println("\n\nLocationIQ apiKey is null or empty. Please run this test with an environment. i.g. locationiq.apiKey=123456\n\n");
+            return;
         }
 
-        environment.setProperty("nyt.apiKey", apiKey);
-
-        List<NytArticle> articleList = this.nytService.getYesterdaysNews();
-
-        StringBuilder sb = new StringBuilder();
-        ObjectMapper objectMapper = new ObjectMapper();
-
-        articleList.forEach((i)->{
-            try {
-                String itemAsString = objectMapper.writeValueAsString(i);
-                sb.append(itemAsString + "\n");
-            } catch (JsonProcessingException e) {
-                e.printStackTrace();
-            }
-        });
-
-        String data = sb.toString();
-
-        Instant now = Instant.now();
-        Instant yesterday = now.minus(1, ChronoUnit.DAYS);
-        Date date = new Date(yesterday.toEpochMilli());
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
-        sdf.setTimeZone(TimeZone.getTimeZone(DateUtils.TIMEZONE_GMT));
-        String startDateStr = sdf.format(date);
-
-        File file = new File("/Users/chris/Downloads/nyt/nyt_" + startDateStr + ".json");
-        org.apache.commons.io.FileUtils.writeStringToFile(file, data);
-
-        String host = "localhost";
+        String host = "ubuntu-01";
         BaseElasticsearchHighLevel baseElasticsearchHighLevel = new BaseElasticsearchHighLevel(host);
-        ElasticsearchUtils.bulkIngestFromString(host, "news-nyt", data);
+        String baseIndexName = "nyt";
+        ObjectMapper objectMapper = new ObjectMapper();
+        GeocodeService geocodeService = new GeocodeService();
 
-        Assert.assertTrue(articleList.size() > 0);
-    }
+        String directoryStr = "C:/Users/Chris/Dropbox/Data/nyt";
 
-//    @Ignore
-    @Test
-    public void getNews() throws Exception {
-        String apiKey = System.getenv("nyt.apiKey");
-
-        if (StringUtils.isEmpty(apiKey)) {
-            throw new Exception("NYT apiKey is null or empty. Please run this test with an environment. i.g. nyt.apiKey=123456");
+        if (FileUtils.doesFileOrDirectoryExist("/Users/chris/Dropbox/")) {
+            directoryStr = "/Users/chris/Dropbox/Data/nyt";
         }
 
-        environment.setProperty("nyt.apiKey", apiKey);
+        File directory = new File(directoryStr);
+        Arrays.asList(directory.listFiles()).stream()
+                .filter((i)->!i.isDirectory() && i.getName().startsWith("nyt_"))
+                .forEach((i) -> {
+                    try {
+                        String dateAsMonthAsStr = i.getName()
+                                .replace("nyt_", "")
+                                .replace(".json","")
+                                .substring(0,6);
+                        String index = baseIndexName + "-" + dateAsMonthAsStr;
+                        System.out.println("file: " + i.getName() + ", index: " + index);
 
-//        Instant now = Instant.now();
-//        Instant yesterday = now.minus(1, ChronoUnit.DAYS);
-//        Date date = new Date(yesterday.toEpochMilli());
+                        File file = i.getAbsoluteFile();
+                        String data = org.apache.commons.io.FileUtils.readFileToString(file, StandardCharsets.UTF_8.name());
+                        List<String> split = new ArrayList<>(Arrays.asList(data.split("\n")));
 
-        String startDateStr = "20191224";
-        String endDateStr = "20191224";
+                        split.forEach((articleAsJson)->{
+                            try {
+                                Map<String, Object> map = objectMapper.readValue(articleAsJson, Map.class);
+                                map.put("@timestamp", map.get("dateStr"));
+                                map.remove("dateStr");
+                                map.remove("date");
 
-        List<NytArticle> articleList = this.nytService.obtainNews(startDateStr, endDateStr);
+                                Map<String, String> tags = (Map<String, String>) map.get("tags");
+                                String locationStr =tags.get("glocations");
 
-        StringBuilder sb = new StringBuilder();
-        ObjectMapper objectMapper = new ObjectMapper();
+                                GeoCode geoCode = this.nytService.enrichLocationStringWithGeocodeService(locationStr, apiKey);
+                                Map<String, Object> geoCodeMap = objectMapper.convertValue(geoCode, Map.class);
+                                map.put("location", geoCodeMap);
 
-        articleList.forEach((i)->{
-            try {
-                String itemAsString = objectMapper.writeValueAsString(i);
-                sb.append(itemAsString + "\n");
-            } catch (JsonProcessingException e) {
-                e.printStackTrace();
-            }
-        });
+                                String newJson = objectMapper.writeValueAsString(map);
+                                String id = HashUtils.sha1(newJson.getBytes());
 
-        String data = sb.toString();
+//                                IndexRequest indexRequest = (new IndexRequest(index))
+//                                        .type("_doc")
+//                                        .id(id)
+//                                        .source(newJson, XContentType.JSON);
+//                                baseElasticsearchHighLevel.getBulkProcessor().add(indexRequest);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
 
-//        SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
-//        sdf.setTimeZone(TimeZone.getTimeZone(DateUtils.TIMEZONE_GMT));
-//        String startDateStr = sdf.format(date);
+                            try {
+                                Thread.sleep(501);
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                        });
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
 
-        File file = new File("/Users/chris/Downloads/nyt/nyt_" + startDateStr + ".json");
-        org.apache.commons.io.FileUtils.writeStringToFile(file, data);
-
-//        String host = "localhost";
-//        BaseElasticsearchHighLevel baseElasticsearchHighLevel = new BaseElasticsearchHighLevel(host);
-//        ElasticsearchUtils.bulkIngestFromString(host, "news-nyt", data);
-
-        Assert.assertTrue(articleList.size() > 0);
+                    try {
+                        Thread.sleep(501);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                });
     }
 
     @Ignore
