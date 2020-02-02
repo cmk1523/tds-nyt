@@ -1,6 +1,5 @@
 package com.techdevsolutions.nyt.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.techdevsolutions.common.dao.elasticsearch.BaseElasticsearchHighLevel;
 import com.techdevsolutions.common.service.core.DateUtils;
@@ -8,30 +7,18 @@ import com.techdevsolutions.common.service.core.ElasticsearchUtils;
 import com.techdevsolutions.common.service.core.FileUtils;
 import com.techdevsolutions.common.service.core.HashUtils;
 import com.techdevsolutions.nyt.beans.GeoCode;
-import com.techdevsolutions.nyt.beans.NytArticle;
 import org.apache.commons.lang3.StringUtils;
-import org.elasticsearch.action.index.IndexRequest;
-import org.elasticsearch.common.xcontent.XContentType;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Spy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.mock.env.MockEnvironment;
-import org.springframework.web.util.UriUtils;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.text.SimpleDateFormat;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
-
-import static org.junit.Assert.*;
 
 public class NytServiceTest {
     @Autowired
